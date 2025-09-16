@@ -594,7 +594,7 @@ NAN_METHOD(c29_cycle_hash) {
 	if (!input_len) return THROW_ERROR_EXCEPTION("Argument 1 should be a non empty buffer object.");
 
         unsigned char cyclehash[32];
-        rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)input, sizeof(input_len));
+        rx_blake2b((void *)cyclehash, sizeof(cyclehash), (uint8_t *)input, input_len);
 
         unsigned char rev_cyclehash[32];
         for(int i = 0; i < 32; i++)
