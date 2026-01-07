@@ -106,6 +106,7 @@
                 "xmrig/crypto/flex/flex.cpp",
 
                 "xmrig-override/crypto/kawpow/KPHash.cpp",
+                "xmrig-override/crypto/kawpow/KPCache.cpp",
                 "xmrig/3rdparty/libethash/keccakf800.c",
                 "xmrig/3rdparty/libethash/ethash_internal.c",
             ],

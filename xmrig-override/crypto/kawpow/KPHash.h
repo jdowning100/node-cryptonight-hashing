@@ -34,10 +34,25 @@
 namespace xmrig
 {
 
+
+class KPCache;
+
+
 class KPHash
 {
 public:
+    static constexpr uint32_t EPOCH_LENGTH  = 7500;
+    static constexpr uint32_t PERIOD_LENGTH = 3;
+    static constexpr int CNT_CACHE = 11;
+    static constexpr int CNT_MATH = 18;
+    static constexpr uint32_t REGS = 32;
+    static constexpr uint32_t LANES = 16;
+
+    // Original verify function - does NOT validate mix_hash, just computes final hash
     static void verify(const uint32_t (&header_hash)[8], uint64_t nonce, const uint32_t (&mix_hash)[8], uint32_t (&output)[8]);
+
+    // Full calculate function - computes mix_hash from DAG and returns both mix_hash and output
+    static void calculate(const KPCache& light_cache, uint32_t block_height, const uint8_t (&header_hash)[32], uint64_t nonce, uint32_t (&output)[8], uint32_t (&mix_hash)[8]);
 };
 
 

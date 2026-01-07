@@ -24,6 +24,7 @@
 #include "crypto/randomx/randomx.h"
 #include "crypto/astrobwt/AstroBWT.h"
 #include "crypto/kawpow/KPHash.h"
+#include "crypto/kawpow/KPCache.h"
 #include "3rdparty/libethash/ethash.h"
 #include "crypto/ghostrider/ghostrider.h"
 #include "crypto/flex/flex.h"
@@ -786,6 +787,58 @@ NAN_METHOD(kawpow) {
 	info.GetReturnValue().Set(returnValue);
 }
 
+// kawpow_verify: Properly validates the mix_hash by computing it from the DAG
+// Returns: { valid: boolean, hash: Buffer(32), mix_hash: Buffer(32) }
+NAN_METHOD(kawpow_verify) {
+	if (info.Length() != 4) return THROW_ERROR_EXCEPTION("You must provide 4 arguments: header hash (32 bytes), nonce (8 bytes), height (integer), mix_hash (32 bytes)");
+
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+
+	Local<Object> header_hash_buff = info[0]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+	if (!Buffer::HasInstance(header_hash_buff)) return THROW_ERROR_EXCEPTION("Argument 1 should be a buffer object.");
+	if (Buffer::Length(header_hash_buff) != 32) return THROW_ERROR_EXCEPTION("Argument 1 should be a 32 bytes long buffer object.");
+
+	Local<Object> nonce_buff = info[1]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+	if (!Buffer::HasInstance(nonce_buff)) return THROW_ERROR_EXCEPTION("Argument 2 should be a buffer object.");
+	if (Buffer::Length(nonce_buff) != 8) return THROW_ERROR_EXCEPTION("Argument 2 should be a 8 bytes long buffer object.");
+
+	if (!info[2]->IsNumber()) return THROW_ERROR_EXCEPTION("Argument 3 should be a number (block height)");
+	const uint32_t height = Nan::To<uint32_t>(info[2]).FromMaybe(0);
+
+	Local<Object> mix_hash_buff = info[3]->ToObject(isolate->GetCurrentContext()).ToLocalChecked();
+	if (!Buffer::HasInstance(mix_hash_buff)) return THROW_ERROR_EXCEPTION("Argument 4 should be a buffer object.");
+	if (Buffer::Length(mix_hash_buff) != 32) return THROW_ERROR_EXCEPTION("Argument 4 should be a 32 bytes long buffer object.");
+
+	uint8_t header_hash[32];
+	memcpy(header_hash, reinterpret_cast<const uint8_t*>(Buffer::Data(header_hash_buff)), sizeof(header_hash));
+	const uint64_t nonce = __builtin_bswap64(*(reinterpret_cast<const uint64_t*>(Buffer::Data(nonce_buff))));
+	uint32_t provided_mix_hash[8];
+	memcpy(provided_mix_hash, reinterpret_cast<const uint8_t*>(Buffer::Data(mix_hash_buff)), sizeof(provided_mix_hash));
+
+	// Initialize cache for this epoch
+	const uint32_t epoch = height / xmrig::KPHash::EPOCH_LENGTH;
+
+	std::lock_guard<std::mutex> lock(xmrig::KPCache::s_cacheMutex);
+	if (!xmrig::KPCache::s_cache.init(epoch)) {
+		return THROW_ERROR_EXCEPTION("Failed to initialize KawPow cache for epoch");
+	}
+
+	// Calculate the correct mix_hash and output using the DAG
+	uint32_t output[8];
+	uint32_t calculated_mix_hash[8];
+	xmrig::KPHash::calculate(xmrig::KPCache::s_cache, height, header_hash, nonce, output, calculated_mix_hash);
+
+	// Compare provided mix_hash with calculated mix_hash
+	bool valid = (memcmp(provided_mix_hash, calculated_mix_hash, sizeof(calculated_mix_hash)) == 0);
+
+	// Return object with valid flag, hash, and computed mix_hash
+	v8::Local<v8::Object> returnValue = Nan::New<v8::Object>();
+	Nan::Set(returnValue, Nan::New("valid").ToLocalChecked(), Nan::New(valid));
+	Nan::Set(returnValue, Nan::New("hash").ToLocalChecked(), Nan::CopyBuffer((char*)output, 32).ToLocalChecked());
+	Nan::Set(returnValue, Nan::New("mix_hash").ToLocalChecked(), Nan::CopyBuffer((char*)calculated_mix_hash, 32).ToLocalChecked());
+	info.GetReturnValue().Set(returnValue);
+}
+
 NAN_METHOD(ethash) {
 	if (info.Length() != 3) return THROW_ERROR_EXCEPTION("You must provide 3 arguments: header hash (32 bytes), nonce (8 bytes), height (integer)");
 
@@ -882,6 +935,7 @@ NAN_MODULE_INIT(init) {
     Nan::Set(target, Nan::New("c29b_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29b_packed_edges)).ToLocalChecked());
     Nan::Set(target, Nan::New("c29i_packed_edges").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(c29i_packed_edges)).ToLocalChecked());
     Nan::Set(target, Nan::New("kawpow").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(kawpow)).ToLocalChecked());
+    Nan::Set(target, Nan::New("kawpow_verify").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(kawpow_verify)).ToLocalChecked());
     Nan::Set(target, Nan::New("ethash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(ethash)).ToLocalChecked());
     Nan::Set(target, Nan::New("etchash").ToLocalChecked(), Nan::GetFunction(Nan::New<FunctionTemplate>(etchash)).ToLocalChecked());
 }
